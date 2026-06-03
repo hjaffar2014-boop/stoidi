@@ -673,9 +673,7 @@
   }
  
   /* ── CALENDAR ── */
-  .calendar-wrap {
-    margin-top: 0.25rem;
-  }
+  .calendar-wrap { margin-top: 0.25rem; }
  
   .cal-label {
     font-size: 10px;
@@ -757,29 +755,82 @@
   .cal-day.cal-empty { cursor: default; }
   .cal-day.cal-past { color: rgba(255,255,255,0.18); cursor: default; }
  
-  .cal-day.cal-selected {
+  .cal-day.cal-start, .cal-day.cal-end {
     background: linear-gradient(135deg, #7c5fcf, #5a3fb5);
     color: #fff;
-    font-weight: 600;
+    font-weight: 700;
   }
+ 
+  .cal-day.cal-in-range {
+    background: rgba(120,80,255,0.18);
+    color: #d4c8ff;
+    border-radius: 0;
+  }
+ 
+  .cal-day.cal-start { border-radius: 6px 0 0 6px; }
+  .cal-day.cal-end { border-radius: 0 6px 6px 0; }
+  .cal-day.cal-start.cal-end { border-radius: 6px; }
  
   .cal-day.cal-today {
     border: 1px solid var(--purple-dim);
     color: var(--purple);
   }
  
-  .cal-day.cal-today.cal-selected {
-    border-color: transparent;
-    color: #fff;
+  .cal-day.cal-today.cal-start,
+  .cal-day.cal-today.cal-end { border-color: transparent; color: #fff; }
+ 
+  .cal-info {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
  
   .cal-selected-display {
-    margin-top: 8px;
     text-align: center;
     font-size: 12px;
     color: var(--purple);
-    min-height: 18px;
+    min-height: 16px;
     font-weight: 500;
+  }
+ 
+  .cal-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    min-height: 14px;
+  }
+ 
+  .price-result {
+    background: rgba(120,80,255,0.12);
+    border: 1px solid rgba(120,80,255,0.3);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    text-align: center;
+    display: none;
+  }
+ 
+  .price-result.show { display: block; }
+ 
+  .price-result-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+ 
+  .price-result-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--purple);
+  }
+ 
+  .price-result-detail {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
   }
  
 </style>
@@ -1079,7 +1130,7 @@
         <option>Ultra-Luxe — 275,000$</option>
       </select>
       <div class="calendar-wrap">
-        <span class="cal-label">📅 Date de voyage souhaitée</span>
+        <span class="cal-label">📅 Dates de voyage (début → fin)</span>
         <div class="calendar" id="cal">
           <div class="cal-header">
             <button class="cal-nav" id="cal-prev">‹</button>
@@ -1087,7 +1138,15 @@
             <button class="cal-nav" id="cal-next">›</button>
           </div>
           <div class="cal-grid" id="cal-grid"></div>
-          <div class="cal-selected-display" id="cal-selected-display">Aucune date sélectionnée</div>
+          <div class="cal-info">
+            <div class="cal-selected-display" id="cal-selected-display">Aucune date sélectionnée</div>
+            <div class="cal-hint" id="cal-hint">Clique sur une date de départ</div>
+          </div>
+        </div>
+        <div class="price-result" id="price-result">
+          <div class="price-result-label">Estimation du coût total</div>
+          <div class="price-result-num" id="price-result-num">—</div>
+          <div class="price-result-detail" id="price-result-detail"></div>
         </div>
       </div>
       <textarea id="f-msg" placeholder="Questions ou commentaires..."></textarea>
@@ -1152,12 +1211,16 @@
     const forfait = document.getElementById('f-forfait').value;
     const msg = document.getElementById('f-msg').value.trim();
     const travelDate = document.getElementById('cal-selected-display').textContent.trim();
+    const priceEstimate = document.getElementById('price-result').classList.contains('show')
+      ? document.getElementById('price-result-num').textContent + ' (' + document.getElementById('price-result-detail').textContent + ')'
+      : 'Non calculé';
     const subject = encodeURIComponent('Reservation Stoidi Travel — ' + (forfait || 'Forfait non selectionne'));
     const body = encodeURIComponent(
       'Nom: ' + (name || 'Non fourni') + '\n' +
       'Courriel: ' + (email || 'Non fourni') + '\n' +
       'Forfait: ' + (forfait || 'Non selectionne') + '\n\n' +
-      'Date de voyage: ' + (travelDate !== 'Aucune date sélectionnée' ? travelDate : 'Non sélectionnée') + '\n\n' +
+      'Dates de voyage: ' + (travelDate !== 'Aucune date sélectionnée' ? travelDate : 'Non sélectionnées') + '\n' +
+      'Estimation totale: ' + priceEstimate + '\n\n' +
       'Message:\n' + (msg || 'Aucun message.')
     );
     window.open('mailto:349917237@gapps.yrdsb.ca?subject=' + subject + '&body=' + body, '_blank');
@@ -1165,10 +1228,46 @@
  
   // Calendar
   const months = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-  const days = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const dayNames = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
   let calDate = new Date();
-  let selectedDate = null;
+  let startDate = null;
+  let endDate = null;
+  let selectingEnd = false;
   const today = new Date(); today.setHours(0,0,0,0);
+ 
+  const forfaitPrices = {
+    'Petit Luxe': 90000,
+    'Séjour Famille VIP': 150000,
+    'Extrême et Sports': 200000,
+    'Ultra-Luxe': 275000
+  };
+ 
+  function formatDate(d) {
+    return dayNames[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+  }
+ 
+  function updatePriceResult() {
+    const select = document.getElementById('f-forfait');
+    const forfait = select.value;
+    const result = document.getElementById('price-result');
+    const resultNum = document.getElementById('price-result-num');
+    const resultDetail = document.getElementById('price-result-detail');
+ 
+    if (startDate && endDate && forfait) {
+      const diffMs = endDate - startDate;
+      const numDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+      const forfaitName = forfait.split(' — ')[0];
+      const pricePerDay = forfaitPrices[forfaitName] || 0;
+      const total = pricePerDay * numDays;
+      resultNum.textContent = total.toLocaleString('fr-CA') + ' $';
+      resultDetail.textContent = forfaitName + ' · ' + pricePerDay.toLocaleString('fr-CA') + ' $/jour × ' + numDays + ' jour' + (numDays > 1 ? 's' : '');
+      result.classList.add('show');
+    } else {
+      result.classList.remove('show');
+    }
+  }
+ 
+  document.getElementById('f-forfait').addEventListener('change', updatePriceResult);
  
   function renderCalendar() {
     const year = calDate.getFullYear();
@@ -1176,7 +1275,7 @@
     document.getElementById('cal-title').textContent = months[month] + ' ' + year;
     const grid = document.getElementById('cal-grid');
     grid.innerHTML = '';
-    days.forEach(d => {
+    dayNames.forEach(d => {
       const el = document.createElement('div');
       el.className = 'cal-day-name';
       el.textContent = d;
@@ -1195,15 +1294,39 @@
       thisDate.setHours(0,0,0,0);
       let cls = 'cal-day';
       if (thisDate < today) cls += ' cal-past';
-      if (thisDate.getTime() === today.getTime()) cls += ' cal-today';
-      if (selectedDate && thisDate.getTime() === selectedDate.getTime()) cls += ' cal-selected';
+      else {
+        if (thisDate.getTime() === today.getTime()) cls += ' cal-today';
+        if (startDate && thisDate.getTime() === startDate.getTime()) cls += ' cal-start';
+        if (endDate && thisDate.getTime() === endDate.getTime()) cls += ' cal-end';
+        if (startDate && endDate && thisDate > startDate && thisDate < endDate) cls += ' cal-in-range';
+      }
       el.className = cls;
       el.textContent = d;
       if (thisDate >= today) {
         el.addEventListener('click', () => {
-          selectedDate = thisDate;
-          document.getElementById('cal-selected-display').textContent =
-            days[thisDate.getDay()] + ' ' + d + ' ' + months[month] + ' ' + year;
+          if (!selectingEnd || !startDate) {
+            startDate = thisDate;
+            endDate = null;
+            selectingEnd = true;
+            document.getElementById('cal-hint').textContent = 'Maintenant clique sur la date de fin';
+          } else {
+            if (thisDate <= startDate) {
+              startDate = thisDate;
+              endDate = null;
+              document.getElementById('cal-hint').textContent = 'Maintenant clique sur la date de fin';
+            } else {
+              endDate = thisDate;
+              selectingEnd = false;
+              document.getElementById('cal-hint').textContent = 'Clique sur début pour recommencer';
+              updatePriceResult();
+            }
+          }
+          const disp = document.getElementById('cal-selected-display');
+          if (startDate && endDate) {
+            disp.textContent = formatDate(startDate) + '  →  ' + formatDate(endDate);
+          } else if (startDate) {
+            disp.textContent = 'Départ: ' + formatDate(startDate);
+          }
           renderCalendar();
         });
       }
@@ -1227,4 +1350,3 @@
  
 </body>
 </html>
- 
